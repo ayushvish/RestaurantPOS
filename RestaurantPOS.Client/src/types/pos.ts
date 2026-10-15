@@ -54,7 +54,7 @@ export interface RestaurantTable {
   floorId: string;
   tableNumber: string;
   seatingCapacity: number;
-  status: 'Vacant' | 'Occupied' | 'Billed' | 'Reserved';
+  status: 'Vacant' | 'Occupied' | 'KotPlaced' | 'Billed' | 'Reserved';
   currentOrderId?: string;
   posX: number;
   posY: number;

@@ -29,10 +29,12 @@ export const TableView: React.FC = () => {
         return 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400 hover:border-emerald-400 hover:bg-emerald-500/10 hover:shadow-lg hover:shadow-emerald-500/5';
       case 'Occupied':
         return 'bg-rose-500/5 border-rose-500/20 text-rose-400 hover:border-rose-400 hover:bg-rose-500/10 hover:shadow-lg hover:shadow-rose-500/5';
+      case 'KotPlaced':
+        return 'bg-amber-500/10 border-amber-500/40 text-amber-300 hover:border-amber-400 hover:bg-amber-500/20 hover:shadow-lg hover:shadow-amber-500/10 animate-pulse';
       case 'Billed':
         return 'bg-sky-500/5 border-sky-500/20 text-sky-400 hover:border-sky-400 hover:bg-sky-500/10 hover:shadow-lg hover:shadow-sky-500/5';
       case 'Reserved':
-        return 'bg-amber-500/5 border-amber-500/20 text-amber-400 hover:border-amber-400 hover:bg-amber-500/10 hover:shadow-lg hover:shadow-amber-500/5';
+        return 'bg-purple-500/5 border-purple-500/20 text-purple-400 hover:border-purple-400 hover:bg-purple-500/10 hover:shadow-lg hover:shadow-purple-500/5';
     }
   };
 
@@ -42,10 +44,12 @@ export const TableView: React.FC = () => {
         return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
       case 'Occupied':
         return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+      case 'KotPlaced':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
       case 'Billed':
         return 'bg-sky-500/10 text-sky-400 border-sky-500/20';
       case 'Reserved':
-        return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+        return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
     }
   };
 
@@ -76,15 +80,19 @@ export const TableView: React.FC = () => {
         <div className="flex items-center gap-4 bg-slate-950/60 px-4 py-2 rounded-xl border border-slate-900 text-xs font-bold">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></span>
-            <span className="text-slate-400 font-semibold">Vacant (4)</span>
+            <span className="text-slate-400 font-semibold">Vacant</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shadow-sm shadow-rose-500/50"></span>
-            <span className="text-slate-400 font-semibold">Occupied (3)</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50"></span>
+            <span className="text-slate-400 font-semibold">Occupied</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shadow-sm shadow-amber-400/50"></span>
+            <span className="text-slate-400 font-semibold">KOT Placed</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-sky-500 shadow-sm shadow-sky-500/50"></span>
-            <span className="text-slate-400 font-semibold">Billed (1)</span>
+            <span className="text-slate-400 font-semibold">Billed</span>
           </div>
         </div>
       </div>
@@ -129,6 +137,13 @@ export const TableView: React.FC = () => {
                   <div className="pt-2 border-t border-rose-500/20 flex items-center justify-between">
                     <span className="text-[10px] font-bold text-rose-300/80">Running Total</span>
                     <span className="text-xs font-black text-rose-300">₹840.00</span>
+                  </div>
+                )}
+
+                {table.status === 'KotPlaced' && (
+                  <div className="pt-2 border-t border-amber-500/30 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-amber-300/90 animate-pulse">🍳 In Kitchen</span>
+                    <span className="text-xs font-black text-amber-300">Active KOT</span>
                   </div>
                 )}
 

@@ -18,6 +18,43 @@ export const KitchenDisplay: React.FC = () => {
     completeKot(ticketId);
   };
 
+  const playChimeAudio = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+    } catch {
+      // AudioContext fallback
+    }
+  };
+
+  useEffect(() => {
+    if (kots.length > 0) {
+      playChimeAudio();
+    }
+  }, [kots.length]);
+
+  const getTicketAge = (firedAt: string) => {
+    if (!firedAt) return { minutes: 0, label: 'Just now', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' };
+    const diff = Math.floor((new Date().getTime() - new Date(firedAt).getTime()) / 60000);
+    const mins = Math.max(0, diff);
+    if (mins < 10) {
+      return { minutes: mins, label: `${mins}m ago`, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' };
+    } else if (mins < 15) {
+      return { minutes: mins, label: `${mins}m ago (Warning)`, color: 'text-amber-400 bg-amber-500/15 border-amber-500/30' };
+    } else {
+      return { minutes: mins, label: `${mins}m (Overdue!)`, color: 'text-rose-400 bg-rose-500/20 border-rose-500/40 animate-pulse' };
+    }
+  };
+
   const filteredTickets = activeStation === 'All'
     ? kots
     : kots.filter((t: any) => t.kitchenStation === activeStation);
@@ -74,11 +111,16 @@ export const KitchenDisplay: React.FC = () => {
                 </div>
 
                 <div className="text-right">
-                  <div className="flex items-center gap-1 text-xs font-semibold text-rose-400">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>8m ago</span>
-                  </div>
-                  <span className="text-[11px] font-mono text-slate-400">{ticket.orderNumber}</span>
+                  {(() => {
+                    const age = getTicketAge(ticket.firedAt);
+                    return (
+                      <div className={`flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border ${age.color}`}>
+                        <Clock className="w-3 h-3" />
+                        <span>{age.label}</span>
+                      </div>
+                    );
+                  })()}
+                  <span className="text-[11px] font-mono text-slate-400 block mt-1">{ticket.orderNumber}</span>
                 </div>
               </div>
 

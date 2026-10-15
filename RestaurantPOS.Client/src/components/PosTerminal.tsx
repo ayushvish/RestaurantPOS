@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { usePosStore } from '../store/posStore';
-import { Search, Plus, Minus, Trash2, Send, CreditCard, User, Phone, Tag, X } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, Send, CreditCard, User, Phone, Tag, X, Printer, QrCode, CheckCircle2 } from 'lucide-react';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { ThermalReceipt } from './ThermalReceipt';
 
 export const PosTerminal: React.FC = () => {
   const {
@@ -15,6 +17,7 @@ export const PosTerminal: React.FC = () => {
     customerPhone,
     discountPercent,
     gstPercent,
+    restaurantName,
     addToCart,
     updateQuantity,
     removeFromCart,
@@ -29,7 +32,13 @@ export const PosTerminal: React.FC = () => {
     createMenuItem,
   } = usePosStore();
 
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPaymentMode, setSelectedPaymentMode] = useState<number>(3); // 1: Cash, 2: Card, 3: UPI
+  const [foodTypeFilter, setFoodTypeFilter] = useState<'All' | 'Veg' | 'NonVeg'>('All');
+  const [lastPrintedOrder, setLastPrintedOrder] = useState<any>(null);
+
   const [newItemName, setNewItemName] = useState('');
   const [newItemShortCode, setNewItemShortCode] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('0');
@@ -59,6 +68,58 @@ export const PosTerminal: React.FC = () => {
 
   const isInventoryUser = userRole === 'InventoryUser';
 
+  const handlePrintReceipt = () => {
+    if (cart.length === 0 && !selectedTable?.currentOrderId) return;
+    const cgst = Math.round((taxableAmount * (gstPercent / 2)) / 100);
+    const sgst = taxAmount - cgst;
+
+    setLastPrintedOrder({
+      invoiceNo: `PROFORMA-${Date.now().toString().slice(-4)}`,
+      date: new Date().toLocaleString(),
+      tableNumber: selectedTable?.tableNumber || 'Takeaway',
+      waiterName: userRole || 'Captain',
+      customerName: customerName || undefined,
+      customerPhone: customerPhone || undefined,
+      items: cart.map(item => ({
+        name: item.name,
+        qty: item.quantity,
+        price: item.unitPrice,
+        amount: item.totalPrice,
+        variant: item.variantName
+      })),
+      subTotal,
+      cgst,
+      sgst,
+      discount: discountAmount,
+      finalTotal: grandTotal,
+      paymentMode: selectedPaymentMode === 1 ? 'Cash' : selectedPaymentMode === 2 ? 'Card' : 'UPI QR',
+      restaurantName: restaurantName || undefined
+    });
+
+    setTimeout(() => {
+      window.print();
+    }, 100);
+  };
+
+  useKeyboardShortcuts({
+    onSearchFocus: () => searchInputRef.current?.focus(),
+    onPaymentTrigger: () => {
+      if (cart.length > 0 || selectedTable?.currentOrderId) {
+        setShowPaymentModal(true);
+      }
+    },
+    onFireKot: () => {
+      if (cart.length > 0) {
+        fireKot();
+      }
+    },
+    onPrintProforma: () => handlePrintReceipt(),
+    onEscape: () => {
+      setShowPaymentModal(false);
+      setShowAddModal(false);
+    },
+  });
+
   const itemsToDisplay = isInventoryUser
     ? rawMaterials.map(rm => ({
         id: rm.id,
@@ -73,7 +134,10 @@ export const PosTerminal: React.FC = () => {
       }))
     : (() => {
         const active = categories.find((c) => c.id === selectedCategory);
-        return active ? active.menuItems : categories.flatMap((c) => c.menuItems);
+        const list = active ? active.menuItems : categories.flatMap((c) => c.menuItems);
+        if (foodTypeFilter === 'Veg') return list.filter(i => i.isVegetarian);
+        if (foodTypeFilter === 'NonVeg') return list.filter(i => !i.isVegetarian);
+        return list;
       })();
 
   const filteredItems = itemsToDisplay.filter((item) =>
@@ -136,8 +200,9 @@ export const PosTerminal: React.FC = () => {
           <div className="flex-1 relative">
             <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-450" />
             <input
+              ref={searchInputRef}
               type="text"
-              placeholder="Search by Dish Name or Shortcode (F2)..."
+              placeholder="Search by Dish Name or Shortcode (Press F2)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-slate-950/85 border border-slate-800 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 rounded-xl pl-12 pr-4 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none transition-all duration-200"
@@ -147,9 +212,30 @@ export const PosTerminal: React.FC = () => {
           {!isInventoryUser && (
             <>
               <div className="flex items-center gap-1.5 bg-slate-950/60 p-1 rounded-xl border border-slate-900 text-xs font-bold shadow-inner">
-                <button className="px-3 py-1.5 rounded-lg bg-slate-800 text-white shadow-sm btn-interactive">All</button>
-                <button className="px-3 py-1.5 rounded-lg text-emerald-400 hover:bg-slate-900/60 btn-interactive">🟢 Veg Only</button>
-                <button className="px-3 py-1.5 rounded-lg text-rose-400 hover:bg-slate-900/60 btn-interactive">🔴 Non-Veg</button>
+                <button
+                  onClick={() => setFoodTypeFilter('All')}
+                  className={`px-3 py-1.5 rounded-lg transition duration-150 btn-interactive ${
+                    foodTypeFilter === 'All' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setFoodTypeFilter('Veg')}
+                  className={`px-3 py-1.5 rounded-lg transition duration-150 btn-interactive ${
+                    foodTypeFilter === 'Veg' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-emerald-400 hover:bg-slate-900/60'
+                  }`}
+                >
+                  🟢 Veg Only
+                </button>
+                <button
+                  onClick={() => setFoodTypeFilter('NonVeg')}
+                  className={`px-3 py-1.5 rounded-lg transition duration-150 btn-interactive ${
+                    foodTypeFilter === 'NonVeg' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' : 'text-rose-400 hover:bg-slate-900/60'
+                  }`}
+                >
+                  🔴 Non-Veg
+                </button>
               </div>
 
               <button 
@@ -375,26 +461,172 @@ export const PosTerminal: React.FC = () => {
           </div>
 
           {/* Action Triggers */}
-          <div className="grid grid-cols-2 gap-2 pt-2">
+          <div className="grid grid-cols-3 gap-2 pt-2">
+            <button
+              onClick={() => handlePrintReceipt()}
+              disabled={cart.length === 0 && !selectedTable?.currentOrderId}
+              className="flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-850 disabled:opacity-50 text-slate-300 py-3 rounded-xl font-bold text-[11px] transition duration-200 cursor-pointer btn-interactive border border-slate-850"
+              title="Print Receipt (F9)"
+            >
+              <Printer className="w-3.5 h-3.5 text-sky-400" />
+              Print (F9)
+            </button>
             <button
               onClick={() => fireKot()}
               disabled={cart.length === 0}
-              className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-850 disabled:opacity-50 text-slate-350 py-3.5 rounded-xl font-bold text-xs transition duration-200 cursor-pointer btn-interactive border border-slate-850"
+              className="flex items-center justify-center gap-1.5 bg-slate-900 hover:bg-slate-850 disabled:opacity-50 text-slate-300 py-3 rounded-xl font-bold text-[11px] transition duration-200 cursor-pointer btn-interactive border border-slate-850"
+              title="Send to Kitchen (F8)"
             >
-              <Send className="w-4 h-4 text-orange-450" />
-              Fire KOT (F8)
+              <Send className="w-3.5 h-3.5 text-orange-400" />
+              KOT (F8)
             </button>
             <button
-              onClick={() => settleOrder(3)} // UPI
+              onClick={() => setShowPaymentModal(true)}
               disabled={cart.length === 0 && !selectedTable?.currentOrderId}
-              className="flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 disabled:opacity-50 text-white py-3.5 rounded-xl font-bold text-xs transition duration-200 shadow-lg shadow-orange-600/10 cursor-pointer btn-interactive"
+              className="flex items-center justify-center gap-1.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 disabled:opacity-50 text-white py-3 rounded-xl font-bold text-[11px] transition duration-200 shadow-lg shadow-orange-600/10 cursor-pointer btn-interactive"
+              title="Settle Bill (F4)"
             >
-              <CreditCard className="w-4 h-4" />
-              Settle Bill (F4)
+              <CreditCard className="w-3.5 h-3.5" />
+              Pay (F4)
             </button>
           </div>
         </div>
       </div>
+
+      {/* Hidden Thermal Receipt component for window.print() */}
+      {lastPrintedOrder && <ThermalReceipt order={lastPrintedOrder} />}
+
+      {/* Payment & Split Settlement Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel glass-panel-glow rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl text-left border border-slate-800">
+            <div className="p-5 border-b border-slate-900 flex items-center justify-between bg-slate-950/80">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-orange-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Payment Settlement & Bill Checkout
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowPaymentModal(false)}
+                className="text-slate-400 hover:text-white cursor-pointer transition duration-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Grand Total Display */}
+              <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Amount Payable</span>
+                  <span className="text-2xl font-black text-orange-400">₹{grandTotal.toFixed(2)}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs text-slate-400 font-semibold block">{selectedTable ? `Table ${selectedTable.tableNumber}` : 'Takeaway Order'}</span>
+                  <span className="text-[11px] text-slate-500">{cart.length} items</span>
+                </div>
+              </div>
+
+              {/* Payment Method Selector */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  Select Tender Method
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPaymentMode(3)}
+                    className={`p-3 rounded-xl border text-center font-bold text-xs transition duration-200 flex flex-col items-center gap-1.5 ${
+                      selectedPaymentMode === 3
+                        ? 'bg-orange-500/20 border-orange-500 text-orange-400 shadow-md'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <QrCode className="w-5 h-5" />
+                    <span>UPI QR Code</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPaymentMode(1)}
+                    className={`p-3 rounded-xl border text-center font-bold text-xs transition duration-200 flex flex-col items-center gap-1.5 ${
+                      selectedPaymentMode === 1
+                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-md'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span className="text-base">💵</span>
+                    <span>Cash Tender</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPaymentMode(2)}
+                    className={`p-3 rounded-xl border text-center font-bold text-xs transition duration-200 flex flex-col items-center gap-1.5 ${
+                      selectedPaymentMode === 2
+                        ? 'bg-sky-500/20 border-sky-500 text-sky-400 shadow-md'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <CreditCard className="w-5 h-5" />
+                    <span>Credit / Debit Card</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Dynamic Bharat UPI QR Preview if UPI selected */}
+              {selectedPaymentMode === 3 && (
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-bold text-orange-400 uppercase tracking-wide block">Scan & Pay (Bharat UPI)</span>
+                    <p className="text-[10px] text-slate-400 max-w-[220px]">
+                      Customer scans this dynamic QR using GPay, PhonePe, or Paytm for instant credit.
+                    </p>
+                    <span className="text-[10px] font-mono text-slate-500 block pt-1">
+                      Ref: ORD-{Date.now().toString().slice(-4)}
+                    </span>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=96x96&data=${encodeURIComponent(
+                        `upi://pay?pa=restaurantpos@upi&pn=PetpoojaRestaurant&am=${grandTotal.toFixed(2)}&cu=INR`
+                      )}`}
+                      alt="UPI QR Code"
+                      className="w-20 h-20"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Complete & Print Actions */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    handlePrintReceipt();
+                    await settleOrder(selectedPaymentMode);
+                    setShowPaymentModal(false);
+                  }}
+                  className="py-3 px-4 rounded-xl font-bold text-xs bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 transition duration-200 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4 text-sky-400" />
+                  Settle & Print Receipt
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await settleOrder(selectedPaymentMode);
+                    setShowPaymentModal(false);
+                  }}
+                  className="py-3 px-4 rounded-xl font-bold text-xs bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 text-white shadow-lg shadow-orange-600/20 transition duration-200 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Confirm Settle (F4)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add MenuItem Modal */}
       {showAddModal && (
