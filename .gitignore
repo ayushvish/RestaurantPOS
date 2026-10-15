@@ -1,0 +1,70 @@
+# ====================================================================
+# Root .gitignore for RestaurantPOS (.NET API + React/Vite Frontend)
+# ====================================================================
+
+# --------------------------------------------------
+# .NET / C# Build Artifacts
+# --------------------------------------------------
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+appsettings.Production.json
+appsettings.local.json
+
+# Visual Studio / Rider / Omnisharp cache
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+*.nupkg
+TestResults/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# --------------------------------------------------
+# Node / React / Vite Frontend
+# --------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --------------------------------------------------
+# Environment variables & secrets
+# --------------------------------------------------
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# --------------------------------------------------
+# OS & Editor files
+# --------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# --------------------------------------------------
+# Database & Backup files
+# --------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.bak
