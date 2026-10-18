@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { usePosStore } from '../store/posStore';
 import { Users, Clock, PlusCircle } from 'lucide-react';
-import type { RestaurantTable } from '../types/pos';
+import type { RestaurantTable, TableStatus } from '../types/pos';
 
 export const TableView: React.FC = () => {
   const { setSelectedTable, setActiveTab, floors } = usePosStore();
@@ -23,33 +23,33 @@ export const TableView: React.FC = () => {
     setActiveTab('billing');
   };
 
-  const getStatusColor = (status: RestaurantTable['status']) => {
+  const getStatusColor = (status: TableStatus) => {
     switch (status) {
       case 'Vacant':
         return 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400 hover:border-emerald-400 hover:bg-emerald-500/10 hover:shadow-lg hover:shadow-emerald-500/5';
       case 'Occupied':
         return 'bg-rose-500/5 border-rose-500/20 text-rose-400 hover:border-rose-400 hover:bg-rose-500/10 hover:shadow-lg hover:shadow-rose-500/5';
-      case 'KotPlaced':
-        return 'bg-amber-500/10 border-amber-500/40 text-amber-300 hover:border-amber-400 hover:bg-amber-500/20 hover:shadow-lg hover:shadow-amber-500/10 animate-pulse';
       case 'Billed':
         return 'bg-sky-500/5 border-sky-500/20 text-sky-400 hover:border-sky-400 hover:bg-sky-500/10 hover:shadow-lg hover:shadow-sky-500/5';
       case 'Reserved':
         return 'bg-purple-500/5 border-purple-500/20 text-purple-400 hover:border-purple-400 hover:bg-purple-500/10 hover:shadow-lg hover:shadow-purple-500/5';
+      default:
+        return 'bg-slate-800/20 border-slate-700 text-slate-300';
     }
   };
 
-  const getBadgeColor = (status: RestaurantTable['status']) => {
+  const getBadgeColor = (status: TableStatus) => {
     switch (status) {
       case 'Vacant':
         return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
       case 'Occupied':
         return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-      case 'KotPlaced':
-        return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
       case 'Billed':
         return 'bg-sky-500/10 text-sky-400 border-sky-500/20';
       case 'Reserved':
         return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+      default:
+        return 'bg-slate-800 text-slate-300 border-slate-700';
     }
   };
 
@@ -87,12 +87,12 @@ export const TableView: React.FC = () => {
             <span className="text-slate-400 font-semibold">Occupied</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shadow-sm shadow-amber-400/50"></span>
-            <span className="text-slate-400 font-semibold">KOT Placed</span>
-          </div>
-          <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-sky-500 shadow-sm shadow-sky-500/50"></span>
             <span className="text-slate-400 font-semibold">Billed</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-sm shadow-purple-500/50"></span>
+            <span className="text-slate-400 font-semibold">Reserved</span>
           </div>
         </div>
       </div>
@@ -136,21 +136,20 @@ export const TableView: React.FC = () => {
                 {table.status === 'Occupied' && (
                   <div className="pt-2 border-t border-rose-500/20 flex items-center justify-between">
                     <span className="text-[10px] font-bold text-rose-300/80">Running Total</span>
-                    <span className="text-xs font-black text-rose-300">₹840.00</span>
-                  </div>
-                )}
-
-                {table.status === 'KotPlaced' && (
-                  <div className="pt-2 border-t border-amber-500/30 flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-amber-300/90 animate-pulse">🍳 In Kitchen</span>
-                    <span className="text-xs font-black text-amber-300">Active KOT</span>
+                    <span className="text-xs font-black text-rose-300">Active Order</span>
                   </div>
                 )}
 
                 {table.status === 'Billed' && (
                   <div className="pt-2 border-t border-sky-500/20 flex items-center justify-between">
                     <span className="text-[10px] font-bold text-sky-300/80">Bill Pending</span>
-                    <span className="text-xs font-black text-sky-300">₹1,250.00</span>
+                    <span className="text-xs font-black text-sky-300">Awaiting Payment</span>
+                  </div>
+                )}
+
+                {table.status === 'Reserved' && (
+                  <div className="pt-2 border-t border-purple-500/20 text-center">
+                    <span className="text-[10px] font-bold text-purple-300/80">Reserved Table</span>
                   </div>
                 )}
 

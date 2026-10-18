@@ -1,6 +1,44 @@
 import { create } from 'zustand';
-import type { CartItem, RestaurantTable, MenuItem, Category, Floor } from '../types/pos';
+import * as signalR from '@microsoft/signalr';
+import type {
+  CartItem,
+  RestaurantTable,
+  MenuItem,
+  Category,
+  Floor,
+  TableStatus,
+  KitchenTicket,
+  RawMaterialStockItem,
+  DashboardStats,
+  User,
+  RestaurantWithOutlets,
+  OrderDetail,
+  OrderDetailItem,
+} from '../types/pos';
 import { apiClient, getPosHubConnection } from '../services/api';
+
+const normalizeTableStatus = (status: TableStatus | number | string): TableStatus => {
+  if (typeof status === 'number') {
+    switch (status) {
+      case 1:
+        return 'Vacant';
+      case 2:
+        return 'Occupied';
+      case 3:
+        return 'Billed';
+      case 4:
+        return 'Reserved';
+      default:
+        return 'Vacant';
+    }
+  }
+  const s = String(status).toLowerCase();
+  if (s === '1' || s === 'vacant') return 'Vacant';
+  if (s === '2' || s === 'occupied') return 'Occupied';
+  if (s === '3' || s === 'billed') return 'Billed';
+  if (s === '4' || s === 'reserved') return 'Reserved';
+  return 'Vacant';
+};
 
 interface PosState {
   activeTab: 'tables' | 'billing' | 'kds' | 'dashboard' | 'inventory' | 'users';
@@ -25,7 +63,7 @@ interface PosState {
   userRole: string | null;
   username: string | null;
   fullName: string | null;
-  allRestaurants: any[];
+  allRestaurants: RestaurantWithOutlets[];
 
   setActiveTab: (tab: 'tables' | 'billing' | 'kds' | 'dashboard' | 'inventory' | 'users') => void;
   setSelectedTable: (table: RestaurantTable | null) => void;
@@ -39,13 +77,13 @@ interface PosState {
   setDiscount: (percent: number) => void;
   setSelectedCategory: (categoryId: string | null) => void;
   setSearchQuery: (query: string) => void;
-  
+
   // API & SignalR Actions
   fetchInitialData: () => Promise<void>;
   initializeSignalR: () => Promise<void>;
-  kots: any[];
-  rawMaterials: any[];
-  dashboardStats: any;
+  kots: KitchenTicket[];
+  rawMaterials: RawMaterialStockItem[];
+  dashboardStats: DashboardStats | null;
   fetchKots: () => Promise<void>;
   toggleKotItemPrepared: (itemId: string) => Promise<void>;
   completeKot: (kotId: string) => Promise<void>;
@@ -55,16 +93,31 @@ interface PosState {
   fetchDashboardStats: () => Promise<void>;
   fireKot: () => Promise<void>;
   settleOrder: (paymentMode: number) => Promise<void>;
-  createMenuItem: (categoryId: string, name: string, shortCode: string, basePrice: number, isVegetarian: boolean, kitchenStation: string) => Promise<void>;
+  createMenuItem: (
+    categoryId: string,
+    name: string,
+    shortCode: string,
+    basePrice: number,
+    isVegetarian: boolean,
+    kitchenStation: string
+  ) => Promise<void>;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   switchContext: (restaurantId: string, outletId: string) => Promise<void>;
   fetchAllRestaurants: () => Promise<void>;
   addRestaurant: (name: string, tagline?: string, outletName?: string, floorName?: string) => Promise<void>;
-  users: any[];
+  users: User[];
   fetchUsers: () => Promise<void>;
   createUser: (fullName: string, username: string, password: string, role: number, pin?: string) => Promise<void>;
-  registerRestaurant: (name: string, tagline: string, address: string, phone: string, adminFullName: string, adminUsername: string, adminPassword: string) => Promise<void>;
+  registerRestaurant: (
+    name: string,
+    tagline: string,
+    address: string,
+    phone: string,
+    adminFullName: string,
+    adminUsername: string,
+    adminPassword: string
+  ) => Promise<void>;
 }
 
 export const usePosStore = create<PosState>((set, get) => ({
@@ -86,7 +139,7 @@ export const usePosStore = create<PosState>((set, get) => ({
   outletId: localStorage.getItem('pos_outlet_id') || null,
   restaurantName: localStorage.getItem('pos_restaurant_name') || null,
   outletName: localStorage.getItem('pos_outlet_name') || null,
-  token: localStorage.getItem('pos_token') || null,
+  token: localStorage.getItem('pos_token') || localStorage.getItem('token') || null,
   userRole: localStorage.getItem('pos_role') || null,
   username: null,
   fullName: localStorage.getItem('pos_user_name') || null,
@@ -101,20 +154,21 @@ export const usePosStore = create<PosState>((set, get) => ({
     set({ selectedTable: table });
     if (table && table.currentOrderId) {
       try {
-        const res = await apiClient.get(`/Orders/${table.currentOrderId}`);
+        const res = await apiClient.get<OrderDetail>(`/Orders/${table.currentOrderId}`);
         if (res.data) {
           const order = res.data;
-          const cartItems = order.items.map((item: any) => ({
+          const cartItems: CartItem[] = order.items.map((item: OrderDetailItem) => ({
             id: `${item.menuItemId || item.rawMaterialId}-${item.variantName || 'standard'}-fired`,
-            menuItemId: item.menuItemId,
-            rawMaterialId: item.rawMaterialId,
+            menuItemId: item.menuItemId ?? null,
+            rawMaterialId: item.rawMaterialId ?? null,
             name: item.itemName,
-            variantName: item.variantName,
+            variantName: item.variantName ?? undefined,
             unitPrice: item.unitPrice,
             quantity: item.quantity,
             totalPrice: item.totalPrice,
             isRawMaterial: !!item.rawMaterialId,
-            isFired: item.isFired
+            isFired: item.isFired,
+            notes: item.notes ?? undefined,
           }));
           set({ cart: cartItems });
         }
@@ -129,7 +183,7 @@ export const usePosStore = create<PosState>((set, get) => ({
   addToCart: (item, variantName, variantPrice) =>
     set((state) => {
       const price = variantPrice ?? item.basePrice;
-      const isRaw = (item as any).isRawMaterial;
+      const isRaw = (item as unknown as { isRawMaterial?: boolean }).isRawMaterial ?? false;
       const key = `${item.id}-${variantName || 'standard'}-pending`;
       const existing = state.cart.find((i) => i.id === key);
 
@@ -156,7 +210,7 @@ export const usePosStore = create<PosState>((set, get) => ({
             quantity: 1,
             totalPrice: price,
             isRawMaterial: isRaw,
-            isFired: false
+            isFired: false,
           },
         ],
       };
@@ -220,13 +274,13 @@ export const usePosStore = create<PosState>((set, get) => ({
 
       // 2. Fetch categories & menu items from PostgreSQL
       if (restaurantId) {
-        const catRes = await apiClient.get(`/Menu/categories/${restaurantId}`);
+        const catRes = await apiClient.get<Category[]>(`/Menu/categories/${restaurantId}`);
         set({ categories: catRes.data || [] });
       }
 
       // 3. Fetch floors & tables from PostgreSQL
       if (outletId) {
-        const floorRes = await apiClient.get(`/Floor/outlets/${outletId}/floors`);
+        const floorRes = await apiClient.get<Floor[]>(`/Floor/outlets/${outletId}/floors`);
         set({ floors: floorRes.data || [] });
       }
 
@@ -247,51 +301,142 @@ export const usePosStore = create<PosState>((set, get) => ({
   initializeSignalR: async () => {
     try {
       const hub = getPosHubConnection();
-      if (hub.state === 'Disconnected') {
-        await hub.start();
-        console.log('[SignalR] Connected to Real-time POS Hub');
-        
-        const { outletId } = get();
-        if (outletId) {
-          await hub.invoke('JoinOutletGroup', outletId);
+
+      // Clear existing listeners to avoid duplicate subscriptions
+      hub.off('TableStatusChanged');
+      hub.off('TableStatusUpdated');
+      hub.off('NewOrderCreated');
+      hub.off('KotReceived');
+      hub.off('KotStatusChanged');
+      hub.off('KotItemToggled');
+      hub.off('OrderSettled');
+
+      // Shared handler supporting both (tableId, status, orderId) and ({ tableId, status, currentOrderId })
+      const handleTableStatusChange = (
+        arg1: string | { tableId: string; status: TableStatus | number | string; currentOrderId?: string; orderId?: string },
+        arg2?: TableStatus | number | string,
+        arg3?: string
+      ) => {
+        let tableId: string;
+        let statusRaw: TableStatus | number | string;
+        let orderId: string | undefined;
+
+        if (typeof arg1 === 'object' && arg1 !== null) {
+          tableId = arg1.tableId;
+          statusRaw = arg1.status;
+          orderId = arg1.currentOrderId ?? arg1.orderId;
+        } else {
+          tableId = arg1;
+          statusRaw = arg2!;
+          orderId = arg3;
         }
 
-        // Listen for table status updates
-        hub.on('TableStatusChanged', (tableId: string, status: RestaurantTable['status'], orderId?: string) => {
+        const normalizedStatus = normalizeTableStatus(statusRaw);
+        const effectiveOrderId = normalizedStatus === 'Vacant' ? undefined : orderId;
+
+        set((state) => ({
+          floors: state.floors.map((floor) => ({
+            ...floor,
+            tables: floor.tables.map((t) =>
+              t.id === tableId
+                ? {
+                    ...t,
+                    status: normalizedStatus,
+                    currentOrderId: effectiveOrderId ?? (normalizedStatus === 'Vacant' ? undefined : t.currentOrderId),
+                  }
+                : t
+            ),
+          })),
+          selectedTable:
+            state.selectedTable?.id === tableId
+              ? {
+                  ...state.selectedTable,
+                  status: normalizedStatus,
+                  currentOrderId: effectiveOrderId ?? (normalizedStatus === 'Vacant' ? undefined : state.selectedTable.currentOrderId),
+                }
+              : state.selectedTable,
+        }));
+      };
+
+      // Listen for table status updates from backend
+      hub.on('TableStatusChanged', handleTableStatusChange);
+      hub.on('TableStatusUpdated', handleTableStatusChange);
+
+      // Listen for newly created orders to update table occupancy
+      hub.on('NewOrderCreated', (order: { id: string; tableId?: string }) => {
+        if (order?.tableId) {
+          const tableId = order.tableId;
           set((state) => ({
             floors: state.floors.map((floor) => ({
               ...floor,
               tables: floor.tables.map((t) =>
-                t.id === tableId ? { ...t, status, currentOrderId: orderId } : t
+                t.id === tableId
+                  ? { ...t, status: 'Occupied', currentOrderId: order.id }
+                  : t
               ),
             })),
+            selectedTable:
+              state.selectedTable?.id === tableId
+                ? { ...state.selectedTable, status: 'Occupied', currentOrderId: order.id }
+                : state.selectedTable,
           }));
-        });
+        }
+      });
 
-        // Listen for KOT events
-        hub.on('KotReceived', () => {
-          get().fetchKots();
-        });
+      // Listen for KOT events
+      hub.on('KotReceived', async () => {
+        await get().fetchKots();
+      });
 
-        hub.on('KotStatusChanged', () => {
-          get().fetchKots();
-        });
+      hub.on('KotStatusChanged', async () => {
+        await get().fetchKots();
+      });
 
-        hub.on('KotItemToggled', () => {
-          get().fetchKots();
-        });
+      hub.on('KotItemToggled', async () => {
+        await get().fetchKots();
+      });
 
-        hub.on('OrderSettled', () => {
-          // Refresh table states
-          const { outletId } = get();
-          if (outletId) {
-            apiClient.get(`/Floor/outlets/${outletId}/floors`).then((res) => {
-              if (res.data) set({ floors: res.data });
-            });
+      hub.on('OrderSettled', async (payload?: { orderId?: string; grandTotal?: number }) => {
+        const { outletId, selectedTable } = get();
+        if (outletId) {
+          try {
+            const res = await apiClient.get<Floor[]>(`/Floor/outlets/${outletId}/floors`);
+            if (res.data) set({ floors: res.data });
+          } catch (err) {
+            console.error('[SignalR] Error refreshing floors on OrderSettled:', err);
           }
-          get().fetchDashboardStats();
-          get().fetchRawMaterials();
-        });
+        }
+        if (selectedTable && payload?.orderId && selectedTable.currentOrderId === payload.orderId) {
+          set({
+            selectedTable: { ...selectedTable, status: 'Vacant', currentOrderId: undefined },
+            cart: [],
+          });
+        }
+        await get().fetchDashboardStats();
+        await get().fetchRawMaterials();
+      });
+
+      // Reconnection lifecycle handling
+      hub.onreconnected(async (connectionId) => {
+        console.log('[SignalR] Reconnected. Connection ID:', connectionId);
+        const { outletId } = get();
+        if (outletId) {
+          try {
+            await hub.invoke('JoinOutletGroup', outletId);
+          } catch (err) {
+            console.error('[SignalR] Error re-joining outlet group after reconnection:', err);
+          }
+        }
+      });
+
+      if (hub.state === signalR.HubConnectionState.Disconnected) {
+        await hub.start();
+        console.log('[SignalR] Connected to Real-time POS Hub');
+
+        const { outletId } = get();
+        if (outletId) {
+          await hub.invoke('JoinOutletGroup', outletId);
+        }
       }
     } catch (err) {
       console.warn('[SignalR Connection Warning]:', err);
@@ -302,8 +447,8 @@ export const usePosStore = create<PosState>((set, get) => ({
     const { outletId } = get();
     if (!outletId) return;
     try {
-      const res = await apiClient.get(`/Orders/outlet/${outletId}/kots`);
-      set({ kots: res.data });
+      const res = await apiClient.get<KitchenTicket[]>(`/Orders/outlet/${outletId}/kots`);
+      set({ kots: res.data || [] });
     } catch (err) {
       console.error('Error fetching KOTs:', err);
     }
@@ -312,7 +457,6 @@ export const usePosStore = create<PosState>((set, get) => ({
   toggleKotItemPrepared: async (itemId) => {
     try {
       await apiClient.post(`/Orders/kots/items/${itemId}/toggle`);
-      // Local state is updated via SignalR broadcast or fetch
       await get().fetchKots();
     } catch (err) {
       console.error('Error toggling KOT item prepared state:', err);
@@ -332,17 +476,26 @@ export const usePosStore = create<PosState>((set, get) => ({
     const { restaurantId, outletId } = get();
     if (!restaurantId || !outletId) return;
     try {
-      const res = await apiClient.get(`/Inventory/materials/${restaurantId}`);
-      // Merge stocks
-      const materials = res.data.map((m: any) => {
-        const stock = m.stocks?.find((s: any) => s.outletId === outletId);
+      const res = await apiClient.get<
+        Array<{
+          id: string;
+          name: string;
+          unitOfMeasure: string;
+          costPerUnit: number;
+          minThresholdAlert: number;
+          stocks?: Array<{ outletId: string; currentStockQuantity: number }>;
+        }>
+      >(`/Inventory/materials/${restaurantId}`);
+
+      const materials: RawMaterialStockItem[] = (res.data || []).map((m) => {
+        const stock = m.stocks?.find((s) => s.outletId === outletId);
         return {
           id: m.id,
           name: m.name,
           uom: m.unitOfMeasure,
           cost: m.costPerUnit,
           min: m.minThresholdAlert,
-          stock: stock ? stock.currentStockQuantity : 0
+          stock: stock ? stock.currentStockQuantity : 0,
         };
       });
       set({ rawMaterials: materials });
@@ -359,7 +512,7 @@ export const usePosStore = create<PosState>((set, get) => ({
         name,
         unitOfMeasure: uom,
         costPerUnit: cost,
-        minThresholdAlert: min
+        minThresholdAlert: min,
       });
       await get().fetchRawMaterials();
     } catch (err) {
@@ -374,7 +527,7 @@ export const usePosStore = create<PosState>((set, get) => ({
       await apiClient.post(`/Inventory/stock/${outletId}/adjust`, {
         rawMaterialId,
         quantityChange,
-        reason
+        reason,
       });
       await get().fetchRawMaterials();
     } catch (err) {
@@ -386,8 +539,8 @@ export const usePosStore = create<PosState>((set, get) => ({
     const { outletId } = get();
     if (!outletId) return;
     try {
-      const res = await apiClient.get(`/Reports/outlet/${outletId}/dashboard`);
-      set({ dashboardStats: res.data });
+      const res = await apiClient.get<DashboardStats>(`/Reports/outlet/${outletId}/dashboard`);
+      set({ dashboardStats: res.data || null });
     } catch (err) {
       console.error('Error fetching dashboard stats:', err);
     }
@@ -399,46 +552,48 @@ export const usePosStore = create<PosState>((set, get) => ({
 
     try {
       let orderId = selectedTable?.currentOrderId;
-
-      const newItems = cart.filter(item => !item.isFired);
+      const newItems = cart.filter((item) => !item.isFired);
 
       if (!orderId) {
         // Create order first
-        const orderRes = await apiClient.post('/Orders', {
+        const orderRes = await apiClient.post<OrderDetail>('/Orders', {
           outletId,
           orderType: 1, // DineIn
           tableId: selectedTable?.id,
           customerName: get().customerName || 'Table Client',
           customerPhone: get().customerPhone,
           guestCount: 2,
-          items: cart.map(item => ({
+          items: cart.map((item) => ({
             menuItemId: item.menuItemId,
-            rawMaterialId: (item as any).rawMaterialId,
+            rawMaterialId: item.rawMaterialId,
             itemName: item.name,
             variantName: item.variantName,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            notes: item.notes
-          }))
+            notes: item.notes,
+          })),
         });
         orderId = orderRes.data.id;
       } else if (newItems.length > 0) {
         // Append new items to existing order
-        await apiClient.post(`/Orders/${orderId}/items`, newItems.map(item => ({
-          menuItemId: item.menuItemId,
-          rawMaterialId: (item as any).rawMaterialId,
-          itemName: item.name,
-          variantName: item.variantName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          notes: item.notes
-        })));
+        await apiClient.post(
+          `/Orders/${orderId}/items`,
+          newItems.map((item) => ({
+            menuItemId: item.menuItemId,
+            rawMaterialId: item.rawMaterialId,
+            itemName: item.name,
+            variantName: item.variantName,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            notes: item.notes,
+          }))
+        );
       }
 
       await apiClient.post(`/Orders/${orderId}/fire-kot`);
-      
-      // Refresh state
-      const floorRes = await apiClient.get(`/Floor/outlets/${outletId}/floors`);
+
+      // Refresh floor layout
+      const floorRes = await apiClient.get<Floor[]>(`/Floor/outlets/${outletId}/floors`);
       if (floorRes.data && floorRes.data.length > 0) {
         set({ floors: floorRes.data });
       }
@@ -446,8 +601,8 @@ export const usePosStore = create<PosState>((set, get) => ({
       // Re-load table to show updated KOT items as fired in the cart
       if (selectedTable) {
         const updatedTable = floorRes.data
-          .flatMap((f: any) => f.tables)
-          .find((t: any) => t.id === selectedTable.id);
+          .flatMap((f) => f.tables)
+          .find((t) => t.id === selectedTable.id);
         if (updatedTable) {
           await get().setSelectedTable(updatedTable);
         }
@@ -463,39 +618,40 @@ export const usePosStore = create<PosState>((set, get) => ({
 
     try {
       let orderId = selectedTable?.currentOrderId;
-      const newItems = cart.filter(item => !item.isFired);
+      const newItems = cart.filter((item) => !item.isFired);
 
       if (!orderId && cart.length > 0) {
-        // If not created yet, create it
-        const orderRes = await apiClient.post('/Orders', {
+        const orderRes = await apiClient.post<OrderDetail>('/Orders', {
           outletId,
           orderType: 1,
           tableId: selectedTable?.id,
           customerName: get().customerName || 'Walk-In Customer',
           customerPhone: get().customerPhone,
           guestCount: 1,
-          items: cart.map(item => ({
+          items: cart.map((item) => ({
             menuItemId: item.menuItemId,
-            rawMaterialId: (item as any).rawMaterialId,
+            rawMaterialId: item.rawMaterialId,
             itemName: item.name,
             variantName: item.variantName,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            notes: item.notes
-          }))
+            notes: item.notes,
+          })),
         });
         orderId = orderRes.data.id;
       } else if (orderId && newItems.length > 0) {
-        // Append any pending items first
-        await apiClient.post(`/Orders/${orderId}/items`, newItems.map(item => ({
-          menuItemId: item.menuItemId,
-          rawMaterialId: (item as any).rawMaterialId,
-          itemName: item.name,
-          variantName: item.variantName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          notes: item.notes
-        })));
+        await apiClient.post(
+          `/Orders/${orderId}/items`,
+          newItems.map((item) => ({
+            menuItemId: item.menuItemId,
+            rawMaterialId: item.rawMaterialId,
+            itemName: item.name,
+            variantName: item.variantName,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            notes: item.notes,
+          }))
+        );
       }
 
       if (!orderId) return;
@@ -508,11 +664,10 @@ export const usePosStore = create<PosState>((set, get) => ({
         discountAmount,
         discountReason: discountPercent > 0 ? 'Loyalty/Special' : null,
         serviceChargeAmount: 0,
-        paymentTransactionRef: 'TXN-' + Date.now()
+        paymentTransactionRef: 'TXN-' + Date.now(),
       });
 
-      // Clear/Refresh
-      const floorRes = await apiClient.get(`/Floor/outlets/${outletId}/floors`);
+      const floorRes = await apiClient.get<Floor[]>(`/Floor/outlets/${outletId}/floors`);
       if (floorRes.data && floorRes.data.length > 0) {
         set({ floors: floorRes.data });
       }
@@ -535,10 +690,9 @@ export const usePosStore = create<PosState>((set, get) => ({
         gstPercent: 5.0,
         kitchenStation,
         variants: [],
-        modifierGroups: []
+        modifierGroups: [],
       });
-      // Refresh categories & menu items
-      const catRes = await apiClient.get(`/Menu/categories/${restaurantId}`);
+      const catRes = await apiClient.get<Category[]>(`/Menu/categories/${restaurantId}`);
       if (catRes.data && catRes.data.length > 0) {
         set({ categories: catRes.data });
       }
@@ -553,8 +707,9 @@ export const usePosStore = create<PosState>((set, get) => ({
       const res = await apiClient.post('/Auth/login', { username, password });
       if (res.data && res.data.token) {
         const { token, role, fullName, restaurantId, outletId, restaurantName, outletName } = res.data;
-        
+
         localStorage.setItem('pos_token', token);
+        localStorage.setItem('token', token);
         localStorage.setItem('pos_role', role);
         localStorage.setItem('pos_user_name', fullName);
         localStorage.setItem('pos_restaurant_id', restaurantId);
@@ -570,10 +725,9 @@ export const usePosStore = create<PosState>((set, get) => ({
           outletId,
           restaurantName,
           outletName,
-          isConnectedToApi: true
+          isConnectedToApi: true,
         });
 
-        // Set default view based on role
         if (role === 'InventoryUser') {
           set({ activeTab: 'inventory' });
         } else if (role === 'SuperAdmin') {
@@ -582,7 +736,6 @@ export const usePosStore = create<PosState>((set, get) => ({
           set({ activeTab: 'tables' });
         }
 
-        // Fetch user context
         await get().fetchInitialData();
         return true;
       }
@@ -597,6 +750,7 @@ export const usePosStore = create<PosState>((set, get) => ({
 
   logout: () => {
     localStorage.removeItem('pos_token');
+    localStorage.removeItem('token');
     localStorage.removeItem('pos_role');
     localStorage.removeItem('pos_user_name');
     localStorage.removeItem('pos_restaurant_id');
@@ -622,43 +776,56 @@ export const usePosStore = create<PosState>((set, get) => ({
   },
 
   switchContext: async (restaurantId, outletId) => {
+    const previousOutletId = get().outletId;
+
     localStorage.setItem('pos_restaurant_id', restaurantId);
     localStorage.setItem('pos_outlet_id', outletId);
-    
-    // Find restaurant and outlet names from allRestaurants list
-    const restaurantObj = get().allRestaurants.find(r => r.id === restaurantId);
-    const outletObj = restaurantObj?.outlets.find((o: any) => o.id === outletId);
+
+    const restaurantObj = get().allRestaurants.find((r) => r.id === restaurantId);
+    const outletObj = restaurantObj?.outlets.find((o) => o.id === outletId);
     const rName = restaurantObj?.name || 'Restaurant';
     const oName = outletObj?.name || 'Outlet';
 
     localStorage.setItem('pos_restaurant_name', rName);
     localStorage.setItem('pos_outlet_name', oName);
 
-    set({ 
-      restaurantId, 
-      outletId, 
+    set({
+      restaurantId,
+      outletId,
       restaurantName: rName,
       outletName: oName,
-      floors: [], 
-      categories: [], 
-      cart: [], 
-      kots: [] 
+      floors: [],
+      categories: [],
+      cart: [],
+      kots: [],
     });
 
-    // Refresh context data
     try {
-      const catRes = await apiClient.get(`/Menu/categories/${restaurantId}`);
+      const catRes = await apiClient.get<Category[]>(`/Menu/categories/${restaurantId}`);
       set({ categories: catRes.data || [] });
 
       if (outletId) {
-        const floorRes = await apiClient.get(`/Floor/outlets/${outletId}/floors`);
+        const floorRes = await apiClient.get<Floor[]>(`/Floor/outlets/${outletId}/floors`);
         set({ floors: floorRes.data || [] });
       }
 
       // Re-register SignalR Hub connection with new outlet group
       const hub = getPosHubConnection();
-      if (hub.state === 'Connected' && outletId) {
-        await hub.invoke('JoinOutletGroup', outletId);
+      if (hub.state === signalR.HubConnectionState.Connected) {
+        if (previousOutletId && previousOutletId !== outletId) {
+          try {
+            await hub.invoke('LeaveOutletGroup', previousOutletId);
+          } catch (e) {
+            console.warn('[SignalR] Failed leaving previous outlet group:', e);
+          }
+        }
+        if (outletId) {
+          try {
+            await hub.invoke('JoinOutletGroup', outletId);
+          } catch (e) {
+            console.warn('[SignalR] Failed joining new outlet group:', e);
+          }
+        }
       }
 
       await get().fetchRawMaterials();
@@ -671,7 +838,7 @@ export const usePosStore = create<PosState>((set, get) => ({
 
   fetchAllRestaurants: async () => {
     try {
-      const res = await apiClient.get('/Auth/restaurants');
+      const res = await apiClient.get<RestaurantWithOutlets[]>('/Auth/restaurants');
       if (res.data) {
         set({ allRestaurants: res.data });
       }
@@ -694,7 +861,7 @@ export const usePosStore = create<PosState>((set, get) => ({
     const { restaurantId } = get();
     if (!restaurantId) return;
     try {
-      const res = await apiClient.get(`/Auth/users/${restaurantId}`);
+      const res = await apiClient.get<User[]>(`/Auth/users/${restaurantId}`);
       if (res.data) {
         set({ users: res.data });
       }
@@ -714,7 +881,7 @@ export const usePosStore = create<PosState>((set, get) => ({
         username,
         password,
         role,
-        pin
+        pin,
       });
       await get().fetchUsers();
     } catch (err) {
@@ -723,7 +890,15 @@ export const usePosStore = create<PosState>((set, get) => ({
     }
   },
 
-  registerRestaurant: async (name, tagline, address, phone, adminFullName, adminUsername, adminPassword) => {
+  registerRestaurant: async (
+    name,
+    tagline,
+    address,
+    phone,
+    adminFullName,
+    adminUsername,
+    adminPassword
+  ) => {
     try {
       await apiClient.post('/Auth/register', {
         name,
@@ -732,12 +907,11 @@ export const usePosStore = create<PosState>((set, get) => ({
         phone,
         adminFullName,
         adminUsername,
-        adminPassword
+        adminPassword,
       });
     } catch (err) {
       console.error('Error registering restaurant:', err);
       throw err;
     }
   },
-
 }));

@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace RestaurantPOS.API.Models;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum OrderType
 {
     DineIn = 1,
@@ -8,6 +11,7 @@ public enum OrderType
     OnlineAggregator = 4
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum OrderStatus
 {
     Active = 1,
@@ -19,6 +23,7 @@ public enum OrderStatus
     Cancelled = 7
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum KotStatus
 {
     Pending = 1,
@@ -28,6 +33,7 @@ public enum KotStatus
     Cancelled = 5
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TableStatus
 {
     Vacant = 1,
@@ -36,6 +42,7 @@ public enum TableStatus
     Reserved = 4
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PaymentMode
 {
     Cash = 1,
@@ -45,6 +52,7 @@ public enum PaymentMode
     DueCustomerLedger = 5
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum UserRole
 {
     SuperAdmin = 1,

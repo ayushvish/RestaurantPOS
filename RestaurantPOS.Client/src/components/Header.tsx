@@ -54,7 +54,7 @@ export const Header: React.FC = () => {
                   className="bg-slate-900/90 border border-slate-800/80 text-xs font-semibold text-slate-200 rounded-xl px-2.5 py-1.5 outline-none focus:border-orange-500 cursor-pointer transition-all duration-200"
                 >
                   {allRestaurants.map((r) =>
-                    r.outlets.map((o: any) => (
+                    r.outlets.map((o) => (
                       <option key={o.id} value={`${r.id}:${o.id}`}>
                         {r.name} • {o.name}
                       </option>
@@ -296,6 +296,7 @@ export const Header: React.FC = () => {
                     setNewOutletName('');
                     setNewFloorName('');
                   } catch (e) {
+                    console.error('Failed to add restaurant:', e);
                     alert("Failed to add restaurant.");
                   }
                 }}

@@ -73,7 +73,7 @@ public class FloorController : ControllerBase
             .Include(t => t.Floor)
             .FirstOrDefaultAsync(t => t.Id == tableId);
 
-        if (table == null) return NotFound();
+        if (table == null) return NotFound(new ProblemDetails { Title = "Table not found", Detail = $"Table with ID {tableId} was not found." });
 
         table.Status = status;
         if (status == TableStatus.Vacant)
@@ -86,7 +86,7 @@ public class FloorController : ControllerBase
         if (table.Floor != null)
         {
             await _hubContext.Clients.Group($"outlet-{table.Floor.OutletId}")
-                .SendAsync("TableStatusUpdated", new { tableId = table.Id, status = table.Status, currentOrderId = table.CurrentOrderId });
+                .SendAsync("TableStatusChanged", table.Id.ToString(), table.Status.ToString(), table.CurrentOrderId?.ToString());
         }
 
         return Ok(table);

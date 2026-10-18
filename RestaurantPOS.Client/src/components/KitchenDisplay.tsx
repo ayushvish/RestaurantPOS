@@ -57,7 +57,7 @@ export const KitchenDisplay: React.FC = () => {
 
   const filteredTickets = activeStation === 'All'
     ? kots
-    : kots.filter((t: any) => t.kitchenStation === activeStation);
+    : kots.filter((t) => t.kitchenStation === activeStation);
 
   return (
     <div className="flex-1 flex flex-col p-6 overflow-hidden bg-slate-900">

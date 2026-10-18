@@ -22,16 +22,15 @@ public class AuthController : ControllerBase
     {
         _context = context;
         _configuration = configuration;
-        EnsureDefaultUsers();
     }
 
-    private void EnsureDefaultUsers()
+    public static void EnsureDefaultUsers(RestaurantPosContext context)
     {
         bool changed = false;
 
-        if (!_context.Users.Any(u => u.Username == "superadmin"))
+        if (!context.Users.Any(u => u.Username == "superadmin"))
         {
-            _context.Users.Add(new User
+            context.Users.Add(new User
             {
                 FullName = "Super Admin User",
                 Username = "superadmin",
@@ -46,7 +45,7 @@ public class AuthController : ControllerBase
 
         if (changed)
         {
-            _context.SaveChanges();
+            context.SaveChanges();
         }
     }
 
@@ -383,7 +382,7 @@ public class AuthController : ControllerBase
         return Ok(new AuthResponse(token, user.Id, user.FullName, user.Role.ToString(), user.RestaurantId, user.OutletId, user.Restaurant?.Name, user.Outlet?.Name));
     }
 
-    private string HashPassword(string password)
+    public static string HashPassword(string password)
     {
         using var sha256 = SHA256.Create();
         var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password + "RestaurantPOS_Salt_2026"));
@@ -400,7 +399,7 @@ public class AuthController : ControllerBase
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Name, user.FullName),
             new Claim(ClaimTypes.Role, user.Role.ToString()),
-            new Claim("RestaurantId", user.RestaurantId.ToString()),
+            new Claim("RestaurantId", user.RestaurantId?.ToString() ?? string.Empty),
             new Claim("OutletId", user.OutletId?.ToString() ?? string.Empty)
         };
 

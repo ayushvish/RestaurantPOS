@@ -42,7 +42,7 @@ public class OrdersController : ControllerBase
             .Include(o => o.Restaurant)
             .FirstOrDefaultAsync(o => o.Id == req.OutletId);
 
-        if (outlet == null) return NotFound(new { message = "Outlet not found." });
+        if (outlet == null) return NotFound(new ProblemDetails { Title = "Outlet not found", Detail = "Outlet not found." });
 
         var orderCountToday = await _context.Orders
             .CountAsync(o => o.OutletId == req.OutletId && o.CreatedAt.Date == DateTime.UtcNow.Date);
@@ -89,9 +89,10 @@ public class OrdersController : ControllerBase
         order.GrandTotal = Math.Round(order.SubTotal + order.TaxAmount, 2);
 
         // Update Table status if DineIn
+        RestaurantTable? table = null;
         if (req.TableId.HasValue)
         {
-            var table = await _context.Tables.FindAsync(req.TableId.Value);
+            table = await _context.Tables.FindAsync(req.TableId.Value);
             if (table != null)
             {
                 table.Status = TableStatus.Occupied;
@@ -101,6 +102,12 @@ public class OrdersController : ControllerBase
 
         _context.Orders.Add(order);
         await _context.SaveChangesAsync();
+
+        if (table != null)
+        {
+            await _hubContext.Clients.Group($"outlet-{req.OutletId}")
+                .SendAsync("TableStatusChanged", table.Id.ToString(), TableStatus.Occupied.ToString(), order.Id.ToString());
+        }
 
         // Broadcast to POS group
         await _hubContext.Clients.Group($"outlet-{req.OutletId}").SendAsync("NewOrderCreated", order);
@@ -117,7 +124,7 @@ public class OrdersController : ControllerBase
             .Include(o => o.Kots).ThenInclude(k => k.Items)
             .FirstOrDefaultAsync(o => o.Id == orderId);
 
-        if (order == null) return NotFound();
+        if (order == null) return NotFound(new ProblemDetails { Title = "Order not found", Detail = $"Order with ID {orderId} was not found." });
 
         return Ok(order);
     }
@@ -128,7 +135,7 @@ public class OrdersController : ControllerBase
         var order = await _context.Orders
             .Include(o => o.Items)
             .FirstOrDefaultAsync(o => o.Id == orderId);
-        if (order == null) return NotFound();
+        if (order == null) return NotFound(new ProblemDetails { Title = "Order not found", Detail = $"Order with ID {orderId} was not found." });
 
         decimal additionalSubtotal = 0;
         foreach (var itemDto in newItems)
@@ -170,12 +177,12 @@ public class OrdersController : ControllerBase
             .Include(o => o.Table)
             .FirstOrDefaultAsync(o => o.Id == orderId);
 
-        if (order == null) return NotFound();
+        if (order == null) return NotFound(new ProblemDetails { Title = "Order not found", Detail = $"Order with ID {orderId} was not found." });
 
         var itemsToFire = order.Items.Where(i => !i.IsVoided && !i.IsFired).ToList();
         if (!itemsToFire.Any())
         {
-            return BadRequest(new { message = "No new items to fire to kitchen." });
+            return BadRequest(new ProblemDetails { Title = "Bad Request", Detail = "No new items to fire to kitchen." });
         }
 
         var kotNumber = $"KOT-{(order.Kots.Count + 1):D2}";
@@ -225,7 +232,12 @@ public class OrdersController : ControllerBase
             .Include(o => o.Table)
             .FirstOrDefaultAsync(o => o.Id == orderId);
 
-        if (order == null) return NotFound();
+        if (order == null) return NotFound(new ProblemDetails { Title = "Order not found", Detail = $"Order with ID {orderId} was not found." });
+
+        if (order.Status == OrderStatus.Paid || order.IsPaid)
+        {
+            return BadRequest(new ProblemDetails { Title = "Order already settled", Detail = "This order has already been paid and settled." });
+        }
 
         order.DiscountAmount = req.DiscountAmount;
         order.DiscountReason = req.DiscountReason;
@@ -251,7 +263,7 @@ public class OrdersController : ControllerBase
         }
 
         // Auto Recipe & Direct Inventory Deduction
-        var itemIds = order.Items.Where(i => !i.IsVoided && i.MenuItemId.HasValue).Select(i => i.MenuItemId.Value).ToList();
+        var itemIds = order.Items.Where(i => !i.IsVoided && i.MenuItemId.HasValue).Select(i => i.MenuItemId!.Value).ToList();
         var recipes = await _context.RecipeItems
             .Where(r => itemIds.Contains(r.MenuItemId))
             .ToListAsync();
@@ -288,6 +300,12 @@ public class OrdersController : ControllerBase
 
         await _context.SaveChangesAsync();
 
+        if (order.TableId.HasValue && order.Table != null)
+        {
+            await _hubContext.Clients.Group($"outlet-{order.OutletId}")
+                .SendAsync("TableStatusChanged", order.Table.Id.ToString(), TableStatus.Vacant.ToString(), (string?)null);
+        }
+
         // Broadcast table and order update
         await _hubContext.Clients.Group($"outlet-{order.OutletId}").SendAsync("OrderSettled", new { orderId = order.Id, grandTotal = order.GrandTotal });
 
@@ -300,16 +318,16 @@ public class OrdersController : ControllerBase
         var kots = await _context.KitchenOrderTickets
             .Include(k => k.Items)
             .Include(k => k.Order)
-                .ThenInclude(o => o.Table)
-            .Where(k => k.Order.OutletId == outletId && k.Status != KotStatus.Served && k.Status != KotStatus.Cancelled)
+                .ThenInclude(o => o!.Table)
+            .Where(k => k.Order != null && k.Order.OutletId == outletId && k.Status != KotStatus.Served && k.Status != KotStatus.Cancelled)
             .OrderBy(k => k.FiredAt)
             .ToListAsync();
 
         return Ok(kots.Select(k => new {
             id = k.Id,
             orderId = k.OrderId,
-            orderNumber = k.Order.OrderNumber,
-            tableNumber = k.Order.Table != null ? k.Order.Table.TableNumber : "Takeaway",
+            orderNumber = k.Order != null ? k.Order.OrderNumber : string.Empty,
+            tableNumber = k.Order?.Table != null ? k.Order.Table.TableNumber : "Takeaway",
             kotNumber = k.KotNumber,
             kitchenStation = k.KitchenStation,
             status = k.Status,
@@ -332,7 +350,7 @@ public class OrdersController : ControllerBase
             .Include(k => k.Order)
             .FirstOrDefaultAsync(k => k.Id == kotId);
 
-        if (kot == null) return NotFound();
+        if (kot == null) return NotFound(new ProblemDetails { Title = "KOT not found", Detail = $"KOT with ID {kotId} was not found." });
 
         kot.Status = req.Status;
         if (req.Status == KotStatus.Ready || req.Status == KotStatus.Served)
@@ -356,10 +374,10 @@ public class OrdersController : ControllerBase
     {
         var item = await _context.KotItems
             .Include(i => i.KitchenOrderTicket)
-                .ThenInclude(k => k.Order)
+                .ThenInclude(k => k!.Order)
             .FirstOrDefaultAsync(i => i.Id == itemId);
 
-        if (item == null) return NotFound();
+        if (item == null) return NotFound(new ProblemDetails { Title = "KOT item not found", Detail = $"KOT item with ID {itemId} was not found." });
 
         item.IsPrepared = !item.IsPrepared;
         await _context.SaveChangesAsync();

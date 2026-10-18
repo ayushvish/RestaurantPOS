@@ -17,10 +17,18 @@ export const UserManagement: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let ignore = false;
     if (restaurantId) {
-      setIsLoading(true);
-      fetchUsers().finally(() => setIsLoading(false));
+      void Promise.resolve().then(() => {
+        if (!ignore) setIsLoading(true);
+      });
+      fetchUsers().finally(() => {
+        if (!ignore) setIsLoading(false);
+      });
     }
+    return () => {
+      ignore = true;
+    };
   }, [restaurantId, fetchUsers]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -107,7 +115,7 @@ export const UserManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs">
-              {users.map((u: any) => (
+              {users.map((u) => (
                 <tr key={u.id} className="hover:bg-slate-800/30 text-slate-300">
                   <td className="px-6 py-4 font-bold text-white">{u.fullName}</td>
                   <td className="px-6 py-4 font-medium text-slate-400">{u.username}</td>

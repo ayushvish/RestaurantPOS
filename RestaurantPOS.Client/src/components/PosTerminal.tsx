@@ -4,6 +4,9 @@ import { Search, Plus, Minus, Trash2, Send, CreditCard, User, Phone, Tag, X, Pri
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { ThermalReceipt } from './ThermalReceipt';
 
+const getProformaInvoiceNumber = () => `PROFORMA-${Date.now().toString().slice(-4)}`;
+const getCurrentFormattedDate = () => new Date().toLocaleString();
+
 export const PosTerminal: React.FC = () => {
   const {
     cart,
@@ -74,8 +77,8 @@ export const PosTerminal: React.FC = () => {
     const sgst = taxAmount - cgst;
 
     setLastPrintedOrder({
-      invoiceNo: `PROFORMA-${Date.now().toString().slice(-4)}`,
-      date: new Date().toLocaleString(),
+      invoiceNo: getProformaInvoiceNumber(),
+      date: getCurrentFormattedDate(),
       tableNumber: selectedTable?.tableNumber || 'Takeaway',
       waiterName: userRole || 'Captain',
       customerName: customerName || undefined,
@@ -582,7 +585,7 @@ export const PosTerminal: React.FC = () => {
                       Customer scans this dynamic QR using GPay, PhonePe, or Paytm for instant credit.
                     </p>
                     <span className="text-[10px] font-mono text-slate-500 block pt-1">
-                      Ref: ORD-{Date.now().toString().slice(-4)}
+                      Ref: ORD-{selectedTable?.currentOrderId ? selectedTable.currentOrderId.slice(-4).toUpperCase() : 'PENDING'}
                     </span>
                   </div>
                   <div className="bg-white p-2 rounded-xl">
