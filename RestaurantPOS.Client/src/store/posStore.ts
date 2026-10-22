@@ -135,10 +135,22 @@ export const usePosStore = create<PosState>((set, get) => ({
   searchQuery: '',
   isConnectedToApi: false,
   isLoading: false,
-  restaurantId: localStorage.getItem('pos_restaurant_id') || null,
-  outletId: localStorage.getItem('pos_outlet_id') || null,
-  restaurantName: localStorage.getItem('pos_restaurant_name') || null,
-  outletName: localStorage.getItem('pos_outlet_name') || null,
+  restaurantId: (() => {
+    const val = localStorage.getItem('pos_restaurant_id');
+    return val && val !== 'null' && val !== 'undefined' ? val : null;
+  })(),
+  outletId: (() => {
+    const val = localStorage.getItem('pos_outlet_id');
+    return val && val !== 'null' && val !== 'undefined' ? val : null;
+  })(),
+  restaurantName: (() => {
+    const val = localStorage.getItem('pos_restaurant_name');
+    return val && val !== 'null' && val !== 'undefined' ? val : null;
+  })(),
+  outletName: (() => {
+    const val = localStorage.getItem('pos_outlet_name');
+    return val && val !== 'null' && val !== 'undefined' ? val : null;
+  })(),
   token: localStorage.getItem('pos_token') || localStorage.getItem('token') || null,
   userRole: localStorage.getItem('pos_role') || null,
   username: null,
@@ -272,24 +284,32 @@ export const usePosStore = create<PosState>((set, get) => ({
     try {
       set({ isConnectedToApi: true });
 
-      // 2. Fetch categories & menu items from PostgreSQL
-      if (restaurantId) {
+      // 2. Fetch categories & menu items from PostgreSQL (only if restaurant is selected)
+      if (restaurantId && restaurantId !== 'null') {
         const catRes = await apiClient.get<Category[]>(`/Menu/categories/${restaurantId}`);
         set({ categories: catRes.data || [] });
+      } else {
+        set({ categories: [] });
       }
 
-      // 3. Fetch floors & tables from PostgreSQL
-      if (outletId) {
+      // 3. Fetch floors & tables from PostgreSQL (only if outlet is selected)
+      if (outletId && outletId !== 'null') {
         const floorRes = await apiClient.get<Floor[]>(`/Floor/outlets/${outletId}/floors`);
         set({ floors: floorRes.data || [] });
+      } else {
+        set({ floors: [] });
       }
 
       // Fetch dashboard, KOT, and raw materials if relevant
-      await get().fetchRawMaterials();
-      await get().fetchKots();
+      if (restaurantId && outletId) {
+        await get().fetchRawMaterials();
+        await get().fetchKots();
+      }
 
-      // 4. Initialize SignalR
-      await get().initializeSignalR();
+      // 4. Initialize SignalR (only if outletId is present)
+      if (outletId && outletId !== 'null') {
+        await get().initializeSignalR();
+      }
     } catch (error) {
       console.warn('[POS API] Backend unreachable or starting up. Using local cache/mock state.', error);
       set({ isConnectedToApi: false });
@@ -712,10 +732,17 @@ export const usePosStore = create<PosState>((set, get) => ({
         localStorage.setItem('token', token);
         localStorage.setItem('pos_role', role);
         localStorage.setItem('pos_user_name', fullName);
-        localStorage.setItem('pos_restaurant_id', restaurantId);
-        localStorage.setItem('pos_outlet_id', outletId || '');
-        localStorage.setItem('pos_restaurant_name', restaurantName || '');
-        localStorage.setItem('pos_outlet_name', outletName || '');
+        if (restaurantId) localStorage.setItem('pos_restaurant_id', restaurantId);
+        else localStorage.removeItem('pos_restaurant_id');
+
+        if (outletId) localStorage.setItem('pos_outlet_id', outletId);
+        else localStorage.removeItem('pos_outlet_id');
+
+        if (restaurantName) localStorage.setItem('pos_restaurant_name', restaurantName);
+        else localStorage.removeItem('pos_restaurant_name');
+
+        if (outletName) localStorage.setItem('pos_outlet_name', outletName);
+        else localStorage.removeItem('pos_outlet_name');
 
         set({
           token,
@@ -858,10 +885,11 @@ export const usePosStore = create<PosState>((set, get) => ({
   },
 
   fetchUsers: async () => {
-    const { restaurantId } = get();
-    if (!restaurantId) return;
+    const { restaurantId, userRole } = get();
+    const effectiveId = restaurantId || (userRole === 'SuperAdmin' ? '00000000-0000-0000-0000-000000000000' : null);
+    if (!effectiveId) return;
     try {
-      const res = await apiClient.get<User[]>(`/Auth/users/${restaurantId}`);
+      const res = await apiClient.get<User[]>(`/Auth/users/${effectiveId}`);
       if (res.data) {
         set({ users: res.data });
       }

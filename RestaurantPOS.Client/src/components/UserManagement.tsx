@@ -18,7 +18,7 @@ export const UserManagement: React.FC = () => {
 
   useEffect(() => {
     let ignore = false;
-    if (restaurantId) {
+    if (restaurantId || userRole === 'SuperAdmin') {
       void Promise.resolve().then(() => {
         if (!ignore) setIsLoading(true);
       });
@@ -29,7 +29,7 @@ export const UserManagement: React.FC = () => {
     return () => {
       ignore = true;
     };
-  }, [restaurantId, fetchUsers]);
+  }, [restaurantId, userRole, fetchUsers]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,30 +115,39 @@ export const UserManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs">
-              {users.map((u) => (
-                <tr key={u.id} className="hover:bg-slate-800/30 text-slate-300">
-                  <td className="px-6 py-4 font-bold text-white">{u.fullName}</td>
-                  <td className="px-6 py-4 font-medium text-slate-400">{u.username}</td>
-                  {userRole === 'SuperAdmin' && (
-                    <td className="px-6 py-4 font-semibold text-orange-400">{u.restaurantName || 'Platform'}</td>
-                  )}
-                  <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 border rounded-full text-[10px] font-semibold uppercase tracking-wider ${getRoleBadgeClass(u.role)}`}>
-                      {u.role.replace(/([A-Z])/g, ' $1').trim()}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 font-mono font-bold text-slate-400 flex items-center gap-1.5">
-                    <Key className="w-3 h-3 text-slate-600" />
-                    {u.pin || 'None'}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                      Active
-                    </span>
+              {users.length === 0 ? (
+                <tr>
+                  <td colSpan={userRole === 'SuperAdmin' ? 6 : 5} className="px-6 py-12 text-center text-slate-500">
+                    <p className="font-semibold text-sm text-slate-400">No users found</p>
+                    <p className="text-xs text-slate-500 mt-1">Create a restaurant using the "+" button in the top bar or add a user account.</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                users.map((u) => (
+                  <tr key={u.id} className="hover:bg-slate-800/30 text-slate-300">
+                    <td className="px-6 py-4 font-bold text-white">{u.fullName}</td>
+                    <td className="px-6 py-4 font-medium text-slate-400">{u.username}</td>
+                    {userRole === 'SuperAdmin' && (
+                      <td className="px-6 py-4 font-semibold text-orange-400">{u.restaurantName || 'Platform'}</td>
+                    )}
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 border rounded-full text-[10px] font-semibold uppercase tracking-wider ${getRoleBadgeClass(u.role)}`}>
+                        {u.role.replace(/([A-Z])/g, ' $1').trim()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 font-mono font-bold text-slate-400 flex items-center gap-1.5">
+                      <Key className="w-3 h-3 text-slate-600" />
+                      {u.pin || 'None'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                        Active
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
